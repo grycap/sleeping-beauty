@@ -1,0 +1,337 @@
+#!/bin/bash
+#
+# sleepingd
+# Copyright (C) - 
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+function usage() {
+  cat <<EOF
+
+This is a template for a bash application
+
+sleepingd <appname>
+
+  --version | -V            Shows the version number and finalizes.
+  --verbose | -v            Shows more information about the procedure.
+  --debug                   Shows a lot more information about the procedure.
+  --help | -h               Shows this help and exits.
+EOF
+}
+
+function verify_dependencies() {
+  if false; then
+    bashc.finalize 1 "dependency failed"
+  fi
+}
+
+# The list of default configuration files (it is set here just in case that you want to change it in the commandline)
+CONFIGFILES="/etc/default/sleepingd.conf /etc/sleepingd/sleepingd.conf /etc/sleepingd.conf $HOME/.sleepingd etc/sleepingd.conf etc/sleepingd/sleepingd.conf"
+
+# The basic include than gets all from bashc (you should use -S flag to remove the unused functions)
+source all.bashc
+# source configsections.bashc
+
+# A include for the version of this application
+source version
+
+# Parse the commandline into an array
+bashc.parameter_parse_commandline "$@"
+
+COMMAND=
+bashc.parameters_start
+while bashc.parameters_next; do
+  PARAM="$(bashc.parameters_current)"
+  case "$PARAM" in
+    --verbose|-v)           VERBOSE=true;;
+    --debug)                DEBUG=true;;
+    --help | -h)            usage && bashc.finalize;;
+    --version|-V)           p_out "$VERSION"
+                            bashc.finalize 0;;
+    *)                      if [ "$COMMAND" != "" ]; then
+                              usage
+                              bashc.finalize 1 "invalid parameter $PARAM"
+                            fi
+                            COMMAND="$PARAM";;
+  esac
+done
+
+case "$COMMAND" in
+  start|stop|status)  p_debug "valid command";;
+  *)                  usage && bashc.finalize 1 "invalid or missing command";;
+esac
+
+# You should check this function to include the checks for the dependencies of your bash application
+verify_dependencies
+
+# Read the variables from the configuration files
+KEYLIST=(EXEC_CMD_TIMEOUT START_CMD_TIMEOUT STOP_CMD_TIMEOUT CHECK_CMD_TIMEOUT START_CMD \
+          STOP_CMD CHECK_CMD PORT VARRUN_PATH USER IDLE_TIME IDLE_CMD IDLE_CMD_TIMEOUT IDLE_CHECK_INTERVAL ACTIVE)
+bashc.readconffiles "$CONFIGFILES" "${KEYLIST[@]}"
+
+function status() {
+  # Simply get the status of the process in the pid file
+  local S="$1"
+  local PORT="$2"
+
+  local VARRUN_PATH="$(bashc.confsectionsget "$S" "VARRUN_PATH")"
+  local PIDFILE="${VARRUN_PATH}/${PORT}.pid"
+
+  local _PID="$(pgrep -F $PIDFILE 2> /dev/null)"
+  [ $? -ne 0 ] && _PID=
+
+  if [ "$_PID" != "" ]; then
+    return 0
+  fi
+  return 1
+}
+
+function stop() {
+  # Kill the process with the PID in the pidfile
+  local S="$1"
+  local PORT="$2"
+
+  local VARRUN_PATH="$(bashc.confsectionsget "$S" "VARRUN_PATH")"
+  local PIDFILE="${VARRUN_PATH}/${PORT}.pid"
+
+  pkill -F $PIDFILE 2> /dev/null
+}
+
+function start() {
+    local S="$1"
+    local PORT="$2"
+    if [ "$S" == "" ]; then
+      p_debug "server to listen in port $PORT"
+    else
+      p_debug "service '$S' to listen in port $PORT"
+    fi
+
+    # Prepares the names for the files
+    local VARRUN_PATH="$(bashc.confsectionsget "$S" "VARRUN_PATH")"
+    local HANDLER_APP="${VARRUN_PATH}/handler.$PORT"
+    local MONITOR_APP="${VARRUN_PATH}/monitor.$PORT"
+    local PIDFILE="${VARRUN_PATH}/${PORT}.pid"
+
+    # This funcion ensures that a timeout is a numeric timeout; otherwise it is set to zero
+    function correcttime() {
+      local SECTION="$1"
+      local TIMEOUT="$2"
+
+      TIMEOUT="$(bashc.confsectionsget "$SECTION" "$TIMEOUT")"
+      if [ "$TIMEOUT" != "" ]; then
+        if ! bashc.is_int "$TIMEOUT"; then
+          p_warning "bad timeout for $TIMEOUT"
+          echo "0"
+        else
+          echo "$TIMEOUT"
+        fi
+      fi
+    }
+
+    # Get the timeouts fot running commands
+    local CHECK_CMD_TIMEOUT="$(correcttime "$S" "CHECK_CMD_TIMEOUT")"
+    local STOP_CMD_TIMEOUT="$(correcttime "$S" "STOP_CMD_TIMEOUT")"
+    local START_CMD_TIMEOUT="$(correcttime "$S" "START_CMD_TIMEOUT")"
+    local IDLE_CMD_TIMEOUT="$(correcttime "$S" "IDLE_CMD_TIMEOUT")"
+    CHECK_CMD_TIMEOUT="${CHECK_CMD_TIMEOUT:+timeout $CHECK_CMD_TIMEOUT}"
+    STOP_CMD_TIMEOUT="${STOP_CMD_TIMEOUT:+timeout $STOP_CMD_TIMEOUT}"
+    START_CMD_TIMEOUT="${START_CMD_TIMEOUT:+timeout $START_CMD_TIMEOUT}"
+    IDLE_CMD_TIMEOUT="${IDLE_CMD_TIMEOUT:+timeout $IDLE_CMD_TIMEOUT}"
+
+    # Get the parameters for the idle service monitor
+    local IDLE_TIME="$(correcttime "$S" "IDLE_TIME")"
+    local IDLE_CHECK_INTERVAL="$(correcttime "$S" "IDLE_CHECK_INTERVAL")"
+
+    # Now get the commands to execute    
+    local START_CMD_A STOP_CMD_A CHECK_CMD_A IDLE_CMD_A
+    bashc.arrayze_cmd START_CMD_A "$(bashc.confsectionsget "$S" "START_CMD")"
+    local START_CMD="$(bashc.build_cmdline "${START_CMD_A[@]}")"
+    bashc.arrayze_cmd STOP_CMD_A "$(bashc.confsectionsget "$S" "STOP_CMD")"
+    local STOP_CMD="$(bashc.build_cmdline "${STOP_CMD_A[@]}")"
+    bashc.arrayze_cmd CHECK_CMD_A "$(bashc.confsectionsget "$S" "CHECK_CMD")"
+    local CHECK_CMD="$(bashc.build_cmdline "${CHECK_CMD_A[@]}")"
+    bashc.arrayze_cmd IDLE_CMD_A "$(bashc.confsectionsget "$S" "IDLE_CMD")"
+    local IDLE_CMD="$(bashc.build_cmdline "${IDLE_CMD_A[@]}")"
+
+    # Prepare the handler for the incoming connections (it calls the corredponding commands to check the status, start or stop the effective services)
+    p_debug "handler in $HANDLER_APP"
+    mkdir -p "$VARRUN_PATH"
+    cat > "$HANDLER_APP" << EOT
+#!/bin/bash
+case "\$1" in
+  start)
+    if ! ${CHECK_CMD_TIMEOUT} ${CHECK_CMD}; then
+      read IPPORT < <($START_CMD_TIMEOUT ${START_CMD})
+      [ \$? -ne 0 ] && IPPORT=
+      if [ "\$IPPORT" != "" ]; then
+        read _IP _PORT <<< "\$IPPORT"
+        socat - TCP:\$_IP:\$_PORT
+        exit 0
+      fi
+      exit 1
+    fi;;
+  stop) ${STOP_CMD_TIMEOUT} ${STOP_CMD};;
+esac
+exit 1
+EOT
+    chmod +x "$HANDLER_APP"
+
+    # Now check if the running user is the same than the one that should be listening for connections. If it is different, we'll store it in a variable
+    local RUN_USER="$(bashc.confsectionsget "$S" "USER")"
+    local SU_STR=    
+    if [ "$RUN_USER" != "" ]; then
+      local U_ID="$(id -u "$RUN_USER")"
+      if [ $? -ne 0 ]; then
+        p_error "user $RUN_USER does not exist"
+      else
+        local C_ID="$(id -u)"
+        if [ "$U_ID" != "$C_ID" ]; then
+          SU_STR="$RUN_USER"
+        fi
+      fi
+    fi
+
+    # Start the listener in the background and get the PID to be able to kill it
+    if [ "$SU_STR" == "" ]; then
+      # TODO: add a log file?
+      socat TCP-LISTEN:$PORT,fork,reuseaddr EXEC:"$HANDLER_APP start" > /dev/null 2> /dev/null &
+    else
+      # TODO: add a log file? (take into account that the log file should be chowned to the user that runs the server, in case of sudo)
+      su "$SU_STR" -s /bin/sh -c "socat TCP-LISTEN:$PORT,fork,reuseaddr EXEC:'$HANDLER_APP start'" > /dev/null 2> /dev/null &
+    fi
+    pid=$!
+    echo "$pid" > "$PIDFILE"
+
+    # If the idle monitor is activated, we'll create the monitor script, that simply checks whether the service is idle or not, and
+    # if it is, after a period of time, the effective server will be deactivated.
+    if [ $IDLE_TIME -gt 0 -a $IDLE_CHECK_INTERVAL -gt 0 -a "$IDLE_CMD" != "" ]; then
+      cat > "$MONITOR_APP" << EOT
+#!/bin/bash
+IDLE_CHECK_INTERVAL=$IDLE_CHECK_INTERVAL
+IDLE_TIME=$IDLE_TIME
+IDLE_CMD=( $IDLE_CMD_TIMEOUT $IDLE_CMD )
+PID_FILE=$PIDFILE
+STOP_CMD=( $STOP_CMD_TIMEOUT $STOP_CMD )
+EOT
+      cat >> "$MONITOR_APP" <<\EOT
+LAST_BUSY=$(date +%s)
+while true; do
+    PID="$(pgrep -F "$PID_FILE" 2> /dev/null)" || PID=
+    if [ "$PID" == "" ]; then
+        break
+    fi
+    if "${IDLE_CMD[@]}" > /dev/null 2> /dev/null; then
+        CURRENT_TIME=$(date +%s)
+        if (( CURRENT_TIME-LAST_BUSY > IDLE_TIME )); then
+            LAST_BUSY=$(date +%s)
+            "${STOP_CMD[@]}" > /dev/null 2> /dev/null
+        fi
+    else
+        LAST_BUSY=$(date +%s)
+    fi
+    sleep ${IDLE_CHECK_INTERVAL}
+done
+EOT
+      # Run the monitor app
+      chmod +x "$MONITOR_APP"
+      "$MONITOR_APP" &
+    fi
+}
+
+# Set the default values
+EXEC_CMD_TIMEOUT=${EXEC_CMD_TIMEOUT:-}
+START_CMD_TIMEOUT=${START_CMD_TIMEOUT:-$EXEC_CMD_TIMEOUT}
+STOP_CMD_TIMEOUT=${STOP_CMD_TIMEOUT:-$EXEC_CMD_TIMEOUT}
+CHECK_CMD_TIMEOUT=${CHECK_CMD_TIMEOUT:-$EXEC_CMD_TIMEOUT}
+IDLE_CMD_TIMEOUT=${IDLE_CMD_TIMEOUT:-$EXEC_CMD_TIMEOUT}
+START_CMD="${START_CMD:-false}"
+STOP_CMD="${STOP_CMD:-false}"
+CHECK_CMD="${CHECK_CMD:-false}"
+IDLE_CHECK_INTERVAL=${IDLE_CHECK_INTERVAL:-0}
+# All the values are default to the same general value, except for ACTIVE, which is false for the main section and true for the others
+MAIN_ACTIVE=${ACTIVE:-false}
+ACTIVE=${ACTIVE:-true}
+IDLE_TIME=${IDLE_TIME:-0}
+VARRUN_PATH="${VARRUN_PATH:-/var/tmp/sleepingd}"
+PORT=${PORT:--}
+
+for K in "${KEYLIST[@]}"; do
+  p_debug "Variables: $K=${!K}"
+done
+
+# Set the inherited values for the variables inside the sections
+for S in "${BASHC_SECTIONS_AVAILABLE[@]}"; do
+  for K in "${KEYLIST[@]}"; do
+    bashc.confsectionssetdefault "$S" "$K" "${!K}"
+    p_debug "$S > $K = $(bashc.confsectionsget "$S" "$K")"
+  done
+done
+
+# Set the ACTIVE value to the proper default value in the main section
+ACTIVE=${MAIN_ACTIVE}
+
+# We consider the default section as a service itself (a special service)
+BASHC_SECTIONS_AVAILABLE=("" "${BASHC_SECTIONS_AVAILABLE[@]}")
+
+# Now loop in the sections
+for S in "${BASHC_SECTIONS_AVAILABLE[@]}"; do
+
+  # If the service is not active, skip it
+  ACTIVE="$(bashc.confsectionsget "$S" "ACTIVE")"
+  ACTIVE="${ACTIVE,,}"
+  if [ "$ACTIVE" != "true" -a "$ACTIVE" != "yes" ]; then
+    continue
+  fi
+
+  # If the port is not valid, skip it
+  PORT=$(bashc.confsectionsget "$S" "PORT")
+  if [[ ! "$PORT" =~ ^[0-9]+$ ]]; then
+    if [ "$PORT" == "-" ]; then
+      if [ "$S" != "" ]; then
+        p_warning "port not defined for service '$S'"
+      fi
+    else
+      p_error "invalid port $PORT for service $S"
+    fi
+    continue
+  fi
+
+  # Now implement each operation
+  case "$COMMAND" in
+    start)    if status "$S" "$PORT"; then
+                p_out "$PORT already running"
+              else
+                if start "$S" "$PORT"; then
+                  p_out "$S (port $PORT) started"
+                else
+                  p_out "$S (port $PORT) failed"
+                fi
+              fi;;
+    status)   
+              if status "$S" "$PORT"; then
+                p_out "$S (port $PORT) running"
+              else
+                p_out "$S (port $PORT) not running"
+              fi;;
+    stop)     if ! status "$S" "$PORT"; then
+                p_out "already stopped"
+              else
+                if stop "$S" "$PORT"; then
+                  p_out "$S (port $PORT) stopped"
+                else
+                  p_out "$S (port $PORT) not stopped"                
+                fi
+              fi;;
+  esac
+done
