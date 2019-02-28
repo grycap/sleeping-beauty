@@ -1,0 +1,15 @@
+PACKAGE=sleepingd
+VERSION=1.0-beta0
+SUMMARY="sleepingd - a system to implement serverless infrastructures."
+LICENSE="Apache 2.0"
+DESCRIPTION="sleepingd is a system to implement serverless infrastructures. sleepingd listens for the incoming TCP connections and provisions the infrastructure (i.e. the servers) to attend to these connections. At the end, sleepingd dynamically creates on-demand services to respond to incoming TCP connections."
+PACKAGER="caralla@upv.es"
+# DEPENDS is for DEB packages
+DEPENDS="bash, tar, coreutils, gettext-base, gawk, sed, socat, procps, login, netcat"
+# REQUIRES is for RPM packages
+REQUIRES="bash tar coreutils gawk gettext socat util-linux procps-ng nc"
+
+/usr/share/$PACKAGE/;version:../LICENSE
+/etc/$PACKAGE/;etc/*
+;sleepingd;bashc -o $TMPDIR/$FILENAME -cCS $SOURCEFOLDER/${FILENAME}.bashc;chmod +x $TMPDIR/$FILENAME
+/usr/bin/;$TMPDIR/sleepingd
