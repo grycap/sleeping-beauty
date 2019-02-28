@@ -19,14 +19,18 @@
 function usage() {
   cat <<EOF
 
-This is a template for a bash application
+sleepingd is a system to implement serverless infrastructures. sleepingd listens 
+  for the incoming TCP connections and provisions the infrastructure (i.e. the 
+  servers) to attend to these connections. At the end, sleepingd dynamically 
+  creates on-demand services to respond to incoming TCP connections.
 
-sleepingd <appname>
+sleepingd [options]
 
-  --version | -V            Shows the version number and finalizes.
-  --verbose | -v            Shows more information about the procedure.
-  --debug                   Shows a lot more information about the procedure.
-  --help | -h               Shows this help and exits.
+  --config-file | -f <file>   Uses the config file <file> instead of the standard ones.
+  --version | -V              Shows the version number and finalizes.
+  --verbose | -v              Shows more information about the procedure.
+  --debug                     Shows a lot more information about the procedure.
+  --help | -h                 Shows this help and exits.
 EOF
 }
 
@@ -54,6 +58,8 @@ bashc.parameters_start
 while bashc.parameters_next; do
   PARAM="$(bashc.parameters_current)"
   case "$PARAM" in
+    --config-file|-f)       bashc.parameters_next
+                            CONFIGFILES="$(bashc.parameters_current)";;
     --verbose|-v)           VERBOSE=true;;
     --debug)                DEBUG=true;;
     --help | -h)            usage && bashc.finalize;;
