@@ -9,7 +9,7 @@ DEPENDS="bash, tar, coreutils, gettext-base, gawk, sed, socat, procps, login, ne
 # REQUIRES is for RPM packages
 REQUIRES="bash tar coreutils gawk gettext socat util-linux procps-ng nc"
 
-/usr/share/$PACKAGE/;version:../LICENSE
+/usr/share/$PACKAGE/;version:LICENSE:example
 /etc/$PACKAGE/;etc/*
 ;sleepingd;bashc -o $TMPDIR/$FILENAME -cCS $SOURCEFOLDER/${FILENAME}.bashc;chmod +x $TMPDIR/$FILENAME
 /usr/bin/;$TMPDIR/sleepingd

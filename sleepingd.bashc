@@ -1,8 +1,11 @@
 #!/bin/bash
 #
-# sleeping beauty - start services on demand, to serve incoming TCP connections
+# sleeping beauty - a system that helps to implement serverless infrastructures
 #
-# Copyright (C) - 2019
+# https://github.com/grycap/sleeping-beauty
+#
+# Copyright (C) GRyCAP - I3M - UPV 
+# Developed by Carlos A. caralla@upv.es
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -292,6 +295,7 @@ ACTIVE=${MAIN_ACTIVE}
 BASHC_SECTIONS_AVAILABLE=("" "${BASHC_SECTIONS_AVAILABLE[@]}")
 
 # Now loop in the sections
+ACTIVE_SERVICES=0
 for S in "${BASHC_SECTIONS_AVAILABLE[@]}"; do
 
   # If the service is not active, skip it
@@ -313,6 +317,8 @@ for S in "${BASHC_SECTIONS_AVAILABLE[@]}"; do
     fi
     continue
   fi
+
+  ACTIVE_SERVICES=$((ACTIVE_SERVICES+1))
 
   # Now implement each operation
   case "$COMMAND" in
@@ -342,3 +348,7 @@ for S in "${BASHC_SECTIONS_AVAILABLE[@]}"; do
               fi;;
   esac
 done
+
+if ((ACTIVE_SERVICES == 0)); then
+  p_out "no service is active"
+fi

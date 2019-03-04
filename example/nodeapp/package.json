@@ -1,0 +1,11 @@
+{
+    "name": "myapp",
+    "version": "0.0.0",
+    "private": true,
+    "scripts": {
+      "start": "node nodeapp.js"
+    },
+    "dependencies": {
+      "express": "~4.16.0"
+    }
+  }

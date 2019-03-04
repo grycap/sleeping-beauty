@@ -1,0 +1,63 @@
+#!/bin/bash
+#
+# sleeping beauty - a system that helps to implement serverless infrastructures
+#
+# https://github.com/grycap/sleeping-beauty
+#
+# Copyright (C) GRyCAP - I3M - UPV 
+# Developed by Carlos A. caralla@upv.es
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+PORT=${PORT:-3000}
+DOCKERIMAGE=sleepingnode
+NAMES=( sleepingnode1 sleepingnode2 )
+if [ "$2" != "" ]; then V=$(($2+0)); fi 2> /dev/null
+if [ "$V" == "" ]; then
+  V=$((RANDOM%${#NAMES[@]}))
+fi
+if ((V>=${#NAMES[@]})); then V=0; fi
+NAME=${NAMES[$V]}
+PORT=$((PORT+V))
+case $1 in
+  start)
+    if ! docker inspect $NAME > /dev/null 2> /dev/null; then
+      if ! docker run -e PORT=$PORT --rm -id --name $NAME $DOCKERIMAGE > /dev/null 2> /dev/null; then
+        exit 1
+      fi
+    fi
+    IP="$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $NAME 2> /dev/null | head -n 1)"
+    if [ $? -eq 0 ]; then
+      echo "$IP $PORT"
+      exit 0
+    fi
+    ;;
+  status)
+    n=0
+    for N in "${NAMES[@]}"; do
+      docker inspect $N > /dev/null 2> /dev/null
+      [ $? -eq 0 ] && n=$((n+1))
+    done
+    if ((n>0)); then exit 0; fi
+    exit 1
+    ;;
+  stop)
+    for N in "${NAMES[@]}"; do
+      if docker inspect $N > /dev/null 2> /dev/null; then
+        docker stop $N > /dev/null 2> /dev/null
+      fi
+    done
+    exit 0
+    ;;
+esac
+exit 1
