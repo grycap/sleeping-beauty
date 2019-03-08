@@ -21,5 +21,4 @@
 FROM node:alpine
 COPY nodeapp /usr/app/nodeapp
 WORKDIR /usr/app/nodeapp
-RUN npm install
-ENTRYPOINT npm start
+ENTRYPOINT node nodeapp.js

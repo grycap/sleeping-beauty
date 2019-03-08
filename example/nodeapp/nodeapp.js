@@ -21,21 +21,19 @@
 #
 */
 var http = require('http');
-var express = require('express');
-var router = express.Router();
-
-router.get('/', function(req, res, next) {
-  res.send(`response from ${req.socket.localAddress}:${req.socket.localPort}`);
-});
-
-var app = express();
-app.use('/', router);
-
-// catch 404 and forward to error handler
-app.use(function(req, res, next) {
-  res.status(404).send('Not found');
-});
-
 var port = process.env.PORT || '3000';
-var server = http.createServer(app);
+var server = http.createServer((req, res) => {
+  const url = require('url');
+  const reqURL = url.parse(req.url, true);
+
+  if (reqURL.pathname == '/' && req.method === 'GET') {
+    res.statusCode = 200;
+    res.setHeader('Content-Type' , 'text/plain');
+    res.end(`response from ${req.socket.localAddress}:${req.socket.localPort}\n`);
+  } else {
+    res.statusCode = 404;
+    res.setHeader('Content-Type' , 'text/plain');
+    res.end('Not found');
+  }
+});
 server.listen(port);
